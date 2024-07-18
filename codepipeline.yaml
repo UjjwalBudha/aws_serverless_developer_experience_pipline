@@ -27,7 +27,7 @@ Metadata:
 Parameters:
   ProjectSubfolder:
     Type: String
-    Default: "unicorn_contracts"
+    Default: "unicorn/unicorn_contracts"
   CodeCommitRepositoryName:
     Type: String
     Default: "unicorn-properties"
@@ -62,12 +62,6 @@ Parameters:
     Default: "arn:aws:iam::426857564226:role/aws-sam-cli-managed-prod--CloudFormationExecutionRo-PPeCRl3NVZYw"
 
 Resources:
-  #  ____  _            _ _
-  # |  _ \(_)_ __   ___| (_)_ __   ___
-  # | |_) | | '_ \ / _ | | | '_ \ / _ \
-  # |  __/| | |_) |  __| | | | | |  __/
-  # |_|   |_| .__/ \___|_|_|_| |_|\___|
-  #         |_|
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
@@ -77,145 +71,138 @@ Resources:
       RoleArn: !GetAtt CodePipelineExecutionRole.Arn
       RestartExecutionOnUpdate: false
       Stages:
-        - Name: Source
-          Actions:
-            - Name: SourceCodeRepo
-              ActionTypeId:
-                Version: "1"
-                Category: Source
-                Owner: AWS
-                Provider: CodeCommit
-              Configuration:
-                BranchName: !Ref MainGitBranch
-                RepositoryName: !Ref CodeCommitRepositoryName
-                PollForSourceChanges: false
-              OutputArtifacts:
-                - Name: SourceCodeAsZip
-              RunOrder: 1
+      - Name: Source
+        Actions:
+          - Name: SourceCodeRepo
+            ActionTypeId:
+              Category: Source
+              Owner: AWS
+              Provider: CodeStarSourceConnection
+              Version: "1"
+            Configuration:
+              ConnectionArn: "arn:aws:codeconnections:us-east-1:426857564226:connection/e855671a-ca22-4057-83d2-fbce80c8b69c"
+              FullRepositoryId: "UjjwalBudha/aws_serverless_developer_experience_pipline"
+              BranchName: "main"
+              DetectChanges: true
+            OutputArtifacts:
+              - Name: SourceCodeAsZip
+            RunOrder: 1
 
-        - Name: UpdatePipeline
-          Actions:
-            - Name: CreateChangeSet
-              ActionTypeId:
-                Category: Deploy
-                Owner: AWS
-                Provider: CloudFormation
-                Version: "1"
-              Configuration:
-                ActionMode: CHANGE_SET_REPLACE
-                RoleArn: !GetAtt PipelineStackCloudFormationExecutionRole.Arn
-                StackName: !Ref AWS::StackName
-                ChangeSetName: !Sub ${AWS::StackName}-ChangeSet
-                TemplatePath: !Sub "SourceCodeAsZip::${ProjectSubfolder}/codepipeline.yaml"
-                Capabilities: CAPABILITY_NAMED_IAM
-              InputArtifacts:
-                - Name: SourceCodeAsZip
-              RunOrder: 1
-            - Name: ExecuteChangeSet
-              ActionTypeId:
-                Category: Deploy
-                Owner: AWS
-                Provider: CloudFormation
-                Version: "1"
-              Configuration:
-                ActionMode: CHANGE_SET_EXECUTE
-                RoleArn: !GetAtt PipelineStackCloudFormationExecutionRole.Arn
-                StackName: !Ref AWS::StackName
-                ChangeSetName: !Sub ${AWS::StackName}-ChangeSet
-              OutputArtifacts:
-                - Name: !Sub ${AWS::StackName}ChangeSet
-              RunOrder: 2
+      - Name: UpdatePipeline
+        Actions:
+          - Name: CreateChangeSet
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Provider: CloudFormation
+              Version: "1"
+            Configuration:
+              ActionMode: CHANGE_SET_REPLACE
+              RoleArn: !GetAtt PipelineStackCloudFormationExecutionRole.Arn
+              StackName: !Ref AWS::StackName
+              ChangeSetName: !Sub ${AWS::StackName}-ChangeSet
+              TemplatePath: "SourceCodeAsZip::${ProjectSubfolder}/codepipeline.yaml"
+              Capabilities: CAPABILITY_NAMED_IAM
+            InputArtifacts:
+              - Name: SourceCodeAsZip
+            RunOrder: 1
+          - Name: ExecuteChangeSet
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Provider: CloudFormation
+              Version: "1"
+            Configuration:
+              ActionMode: CHANGE_SET_EXECUTE
+              RoleArn: !GetAtt PipelineStackCloudFormationExecutionRole.Arn
+              StackName: !Ref AWS::StackName
+              ChangeSetName: !Sub ${AWS::StackName}-ChangeSet
+            OutputArtifacts:
+              - Name: !Sub ${AWS::StackName}ChangeSet
+            RunOrder: 2
 
-        - Name: UnitTest
-          Actions:
-            - Name: UnitTest
-              ActionTypeId:
-                Category: Build
-                Owner: AWS
-                Provider: CodeBuild
-                Version: "1"
-              Configuration:
-                ProjectName: !Ref CodeBuildProjectUnitTest
-              InputArtifacts:
-                - Name: SourceCodeAsZip
+      - Name: UnitTest
+        Actions:
+          - Name: UnitTest
+            ActionTypeId:
+              Category: Build
+              Owner: AWS
+              Provider: CodeBuild
+              Version: "1"
+            Configuration:
+              ProjectName: !Ref CodeBuildProjectUnitTest
+            InputArtifacts:
+              - Name: SourceCodeAsZip
 
-        - Name: BuildAndPackage
-          Actions:
-            - Name: CodeBuild
-              ActionTypeId:
-                Category: Build
-                Owner: AWS
-                Provider: CodeBuild
-                Version: "1"
-              Configuration:
-                ProjectName: !Ref CodeBuildProjectBuildAndPackage
-              InputArtifacts:
-                - Name: SourceCodeAsZip
-              OutputArtifacts:
-                - Name: BuildArtifactAsZip
+      - Name: BuildAndPackage
+        Actions:
+          - Name: CodeBuild
+            ActionTypeId:
+              Category: Build
+              Owner: AWS
+              Provider: CodeBuild
+              Version: "1"
+            Configuration:
+              ProjectName: !Ref CodeBuildProjectBuildAndPackage
+            InputArtifacts:
+              - Name: SourceCodeAsZip
+            OutputArtifacts:
+              - Name: BuildArtifactAsZip
 
-        - Name: DeployTest
-          Actions:
-            - Name: DeployTest
-              ActionTypeId:
-                Category: Build
-                Owner: AWS
-                Provider: CodeBuild
-                Version: "1"
-              Configuration:
-                ProjectName: !Ref CodeBuildProjectDeploy
-                EnvironmentVariables: !Sub |
-                  [
-                    {"name": "ENV_CONFIG_NAME", "value": "${TestConfigEnvName}"},
-                    {"name": "ENV_PIPELINE_EXECUTION_ROLE", "value": "${TestingPipelineExecutionRole}"},
-                    {"name": "ENV_CLOUDFORMATION_EXECUTION_ROLE", "value": "${TestingCloudFormationExecutionRole}"}
-                  ]
-              InputArtifacts:
-                - Name: BuildArtifactAsZip
-              RunOrder: 1
-            - Name: IntegrationTest
-              ActionTypeId:
-                Category: Build
-                Owner: AWS
-                Provider: CodeBuild
-                Version: "1"
-              Configuration:
-                ProjectName: !Ref CodeBuildProjectIntegrationTest
-                EnvironmentVariables: !Sub |
-                  [
-                    {"name": "ENV_PIPELINE_EXECUTION_ROLE", "value": "${TestingPipelineExecutionRole}"}
-                  ]
-              InputArtifacts:
-                - Name: SourceCodeAsZip
-              RunOrder: 2
+      - Name: DeployTest
+        Actions:
+          - Name: DeployTest
+            ActionTypeId:
+              Category: Build
+              Owner: AWS
+              Provider: CodeBuild
+              Version: "1"
+            Configuration:
+              ProjectName: !Ref CodeBuildProjectDeploy
+              EnvironmentVariables: !Sub |
+                [
+                  {"name": "ENV_CONFIG_NAME", "value": "${TestConfigEnvName}"},
+                  {"name": "ENV_PIPELINE_EXECUTION_ROLE", "value": "${TestingPipelineExecutionRole}"},
+                  {"name": "ENV_CLOUDFORMATION_EXECUTION_ROLE", "value": "${TestingCloudFormationExecutionRole}"}
+                ]
+            InputArtifacts:
+              - Name: BuildArtifactAsZip
+            RunOrder: 1
+          - Name: IntegrationTest
+            ActionTypeId:
+              Category: Build
+              Owner: AWS
+              Provider: CodeBuild
+              Version: "1"
+            Configuration:
+              ProjectName: !Ref CodeBuildProjectIntegrationTest
+              EnvironmentVariables: !Sub |
+                [
+                  {"name": "ENV_PIPELINE_EXECUTION_ROLE", "value": "${TestingPipelineExecutionRole}"}
+                ]
+            InputArtifacts:
+              - Name: SourceCodeAsZip
+            RunOrder: 2
 
-        - Name: DeployProd
-          Actions:
-            # uncomment this to have a manual approval step before deployment to production
-            # - Name: ManualApproval
-            #   ActionTypeId:
-            #    Category: Approval
-            #    Owner: AWS
-            #    Provider: Manual
-            #    Version: "1"
-            #   RunOrder: 1
-            - Name: DeployProd
-              ActionTypeId:
-                Category: Build
-                Owner: AWS
-                Provider: CodeBuild
-                Version: "1"
-              RunOrder: 2 # keeping run order as 2 in case manual approval is enabled
-              Configuration:
-                ProjectName: !Ref CodeBuildProjectDeploy
-                EnvironmentVariables: !Sub |
-                  [
-                    {"name": "ENV_CONFIG_NAME", "value": "${ProdConfigEnvName}"},
-                    {"name": "ENV_PIPELINE_EXECUTION_ROLE", "value": "${ProdPipelineExecutionRole}"},
-                    {"name": "ENV_CLOUDFORMATION_EXECUTION_ROLE", "value": "${ProdCloudFormationExecutionExeRole}"}
-                  ]
-              InputArtifacts:
-                - Name: BuildArtifactAsZip
+      - Name: DeployProd
+        Actions:
+          - Name: DeployProd
+            ActionTypeId:
+              Category: Build
+              Owner: AWS
+              Provider: CodeBuild
+              Version: "1"
+            RunOrder: 2
+            Configuration:
+              ProjectName: !Ref CodeBuildProjectDeploy
+              EnvironmentVariables: !Sub |
+                [
+                  {"name": "ENV_CONFIG_NAME", "value": "${ProdConfigEnvName}"},
+                  {"name": "ENV_PIPELINE_EXECUTION_ROLE", "value": "${ProdPipelineExecutionRole}"},
+                  {"name": "ENV_CLOUDFORMATION_EXECUTION_ROLE", "value": "${ProdCloudFormationExecutionExeRole}"}
+                ]
+            InputArtifacts:
+              - Name: BuildArtifactAsZip
 
   PipelineArtifactsBucket:
     Type: AWS::S3::Bucket
@@ -225,8 +212,7 @@ Resources:
       VersioningConfiguration:
         Status: Enabled
       LoggingConfiguration:
-        DestinationBucketName:
-          !Ref PipelineArtifactsLoggingBucket
+        DestinationBucketName: !Ref PipelineArtifactsLoggingBucket
         LogFilePrefix: "artifacts-logs"
       BucketEncryption:
         ServerSideEncryptionConfiguration:
@@ -265,7 +251,7 @@ Resources:
       AccessControl: "LogDeliveryWrite"
       OwnershipControls:
         Rules:
-          - ObjectOwnership:  ObjectWriter
+          - ObjectOwnership: ObjectWriter
       VersioningConfiguration:
         Status: Enabled
       BucketEncryption:
@@ -368,7 +354,6 @@ Resources:
                 Resource:
                   - !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*"
 
-  # PipelineStackCloudFormationExecutionRole is used for the pipeline to self mutate
   PipelineStackCloudFormationExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -388,11 +373,6 @@ Resources:
                 Action: "*"
                 Resource: "*"
 
-  #   ____          _      ____        _ _     _
-  #  / ___|___   __| | ___| __ ) _   _(_| | __| |
-  # | |   / _ \ / _` |/ _ |  _ \| | | | | |/ _` |
-  # | |__| (_) | (_| |  __| |_) | |_| | | | (_| |
-  #  \____\___/ \__,_|\___|____/ \__,_|_|_|\__,_|
   CodeBuildServiceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -518,12 +498,6 @@ Resources:
         Type: CODEPIPELINE
         BuildSpec: !Sub "${ProjectSubfolder}/pipeline/buildspec_deploy.yml"
 
-  #    _____                      __________                      
-  #   /     \   ____   ____   ____\______   \ ____ ______   ____  
-  #  /  \ /  \ /  _ \ /    \ /  _ \|       _// __ \\____ \ /  _ \ 
-  # /    Y    (  <_> )   |  (  <_> )    |   \  ___/|  |_> >  <_> )
-  # \____|__  /\____/|___|  /\____/|____|_  /\___  >   __/ \____/ 
-  #         \/            \/              \/     \/|__|           
   MonorepoTriggerFunction:
     Type: AWS::Serverless::Function
     Properties:
