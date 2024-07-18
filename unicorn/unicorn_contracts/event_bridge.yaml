@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template for EventBridge PipeDevPipe-intern-ujwal
+Resources:
+  EventBus74fb7956:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: UnicornContractsBus-local
+      Policy: >-
+        {"Version":"2012-10-17","Statement":[{"Sid":"OnlyRulesForContractServiceEvents-local","Effect":"Allow","Principal":{"AWS":"arn:aws:iam::426857564226:root"},"Action":["events:PutRule","events:DeleteRule","events:DescribeRule","events:DisableRule","events:EnableRule","events:PutTargets","events:RemoveTargets"],"Resource":"arn:aws:events:us-east-1:426857564226:rule/UnicornContractsBus-local/*","Condition":{"StringEquals":{"events:source":"uni-prop-prod-shared"},"Null":{"events:source":"false"},"StringEqualsIfExists":{"events:creatorAccount":"${aws:PrincipalAccount}"}}},{"Sid":"OnlyContactsServiceCanPublishToEventBus-local","Effect":"Allow","Principal":{"AWS":"arn:aws:iam::426857564226:root"},"Action":"events:PutEvents","Resource":"arn:aws:events:us-east-1:426857564226:event-bus/UnicornContractsBus-local","Condition":{"StringEquals":{"events:source":"uni-prop-prod-shared"}}}]}
+      Tags:
+        - Key: aws:cloudformation:stack-id
+          Value: >-
+            arn:aws:cloudformation:us-east-1:426857564226:stack/uni-prop-local-contracts/f67fa860-3799-11ef-8a96-0affcd743d09
+        - Key: aws:cloudformation:stack-name
+          Value: uni-prop-local-contracts
+        - Key: aws:cloudformation:logical-id
+          Value: UnicornContractsEventBus
+  Roleadf322ca:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: Amazon_EventBridge_Pipe_DevPipe-intern-ujwalc8a13a69
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: pipes.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceArn:
+                  Fn::Sub: >-
+                    arn:${AWS::Partition}:pipes:${AWS::Region}:${AWS::AccountId}:pipe/DevPipe-intern-ujwal
+                aws:SourceAccount:
+                  Fn::Sub: ${AWS::AccountId}
+      MaxSessionDuration: 3600
+      Tags: []
+  Policycaafcdd4:
+    Type: AWS::IAM::RolePolicy
+    Properties:
+      PolicyName: DynamoDbPipeSourceTemplate26d2001f
+      RoleName:
+        Ref: Roleadf322ca
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - dynamodb:DescribeStream
+              - dynamodb:GetRecords
+              - dynamodb:GetShardIterator
+              - dynamodb:ListStreams
+            Resource:
+              - Fn::Sub: >-
+                  arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/uni-prop-local-contracts-ContractsTable-1D1QSPE82GS51/stream/2024-07-01T11:06:45.293
+  Policy0f3119c1:
+    Type: AWS::IAM::RolePolicy
+    Properties:
+      PolicyName: EventBusPipeTargetTemplate738a4cfc
+      RoleName:
+        Ref: Roleadf322ca
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - events:PutEvents
+            Resource:
+              - Fn::GetAtt:
+                  - EventBus74fb7956
+                  - Arn
+  Pipe169826c1:
+    Type: AWS::Pipes::Pipe
+    DependsOn:
+      - EventBus74fb7956
+      - Roleadf322ca
+      - Policycaafcdd4
+      - Policy0f3119c1
+    Properties:
+      RoleArn:
+        Fn::GetAtt:
+          - Roleadf322ca
+          - Arn
+      Name: DevPipe-intern-ujwal
+      DesiredState: RUNNING
+      Source:
+        Fn::Sub: >-
+          arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/uni-prop-local-contracts-ContractsTable-1D1QSPE82GS51/stream/2024-07-01T11:06:45.293
+      SourceParameters:
+        FilterCriteria:
+          Filters:
+            - Pattern: >-
+                {"eventName":["INSERT","MODIFY"],"dynamodb":{"NewImage":{"contract_status":{"S":["DRAFT","APPROVED"]}}}}
+        DynamoDBStreamParameters:
+          BatchSize: 1
+          MaximumRecordAgeInSeconds: -1
+          MaximumRetryAttempts: -1
+          StartingPosition: LATEST
+      LogConfiguration:
+        CloudwatchLogsLogDestination:
+          LogGroupArn:
+            Fn::Sub: >-
+              arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vendedlogs/pipes/DevPipe-intern-ujwal
+        Level: ERROR
+      TargetParameters:
+        InputTemplate: |
+          {
+          "property_id": "usa/anytown/main-street/123",
+          "contract_id": "5bb04023-74aa-41fc-b86b-447602759270",
+          "contract_status": "DRAFT",
+          "contract_last_modified_on": "25/08/2023 02:14:20"
+          }
+        EventBridgeEventBusParameters: {}
+      Target:
+        Fn::GetAtt:
+          - EventBus74fb7956
+          - Arn
+Parameters: {}
